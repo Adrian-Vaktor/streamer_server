@@ -50,6 +50,7 @@ function generateSessionId() {
 function generateAudioStream() {
   // Replace this with your audio stream logic
   // Example: return fs.createReadStream('path/to/audio/file.pcm');
+  return "stream"
 }
 
 // Dummy route to serve the HTML file
