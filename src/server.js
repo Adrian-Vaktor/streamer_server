@@ -14,61 +14,70 @@
 // /connect-to-stream/:sessionId
 
 
+//--------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------
 
-// Imports
+
+// Imports 
+//--------------------------------------------------------------------------------------------------
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
 const fs = require('fs');
 
-
 // Instantiate server instance
+//--------------------------------------------------------------------------------------------------
 const app = express();
 const server = http.createServer(app);
 const socket_io = socketIO(server);
 
-// constants and app-wide variables
-const chunkSize = 1024;
+// Server Dependencies
+//--------------------------------------------------------------------------------------------------
 
-// Store sessions and listeners
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// constants and app-wide variables
+//--------------------------------------------------------------------------------------------------
+const chunkSize = 1024;
 const sessions = {};
 
+// System Functions
+//--------------------------------------------------------------------------------------------------
 
-
-const get_song_and_stream_to_sockets = ( sockets ) => {
-
-  // Read the audio file in chunks and send to the client
-  const audioFilePath = 'path/to/your/audio/file.pcm';
-  
-  const stream = fs.createReadStream(audioFilePath, { highWaterMark: chunkSize });
-
-
-  sockets.forEach( socket => {
-    
-      fileStream.on('data', (data) => {
-        setTimeout(() => {
-          encoder.write(data);
-        }, 100);
-      });
-      
-      stream.on('end', () => {
-          // Signal the end of the audio stream
-          socket.emit('audioEnd');
-      });
-      
-      socket.on('disconnect', () => {
-          console.log('User disconnected');
-          stream.close(); // Close the stream when the user disconnects
-      });
-
-  })
-  
-
+class SongReadStream{
+  constructor(){
+    this.read_stream = null
+  }
+  // Get a readstream from the audio file location
+  get_song_stream_from_location = ( song_location ) => {
+    const audioFilePath = song_location || 'path/to/your/audio/file.pcm' ;
+    this.read_stream = audioFilePath
+    return this
+  }
 }
 
+// Send a chunk of data from the Audio ReadStream
+const send_data_to_all_sockets = ( data_chunk, sockets_array ) => {
+  sockets_array.forEach((socket) => {
+    socket.emit( 'data', data_chunk)
+  })  
+}
 
+// Send the end flag for the audio ReadStream to all the sockets
+const send_endflag_to_all_sockets = ( sockets_array ) => {
+  sockets_array.forEach((socket) => {
+    socket.emit('audioEnd')
+  })  
+}
 
-
+// Read the audio file in chunks and send to the client
+const get_song_and_stream_to_sockets = ( song_location, sockets_array ) => {
+  const song_stream = new SongReadStream()
+  song_stream.get_song_stream_from_location(song_location)
+  song_stream.read_stream.on( 'data' , ( data_chunk ) => { setTimeout(() => send_data_to_all_sockets( data_chunk, sockets_array ), 100) })
+  song_stream.read_stream.on( 'end' , () => { send_endflag_to_all_sockets( sockets_array ) });
+}
 
 // Innitialize a new session for the user's listening stream and return a newID
 app.get('/create-session', (req, res) => {
@@ -77,15 +86,17 @@ app.get('/create-session', (req, res) => {
   sessions[new_sessionId] = new_session;
 
   res.json({ new_sessionId, socketUrl: `/stream/${new_sessionId}` });
-
-  // Handle data sent from the client
-  socket.on('clientMessage', (data) => {
-    console.log('Received message from client:', data);
-
-    // Broadcast the message to all connected clients
-    io.emit('serverMessage', 'Hello, client! I received your message.');
-  });
 });
+
+app.post('/play-song', (req,res) => {
+  // Access data from the request body
+  const postData = req.body;
+  const userId = postData.userId
+  const songId = postData.songId
+  
+  // Send a response
+  res.json({ message: 'Data received successfully' });
+})
 
 
 // Try connecting to another user's session.
@@ -104,6 +115,20 @@ app.get('/connect-to-stream/:sessionId', (req, res) => {
   const socket = socket_io.of(`/stream/${sessionId}`)
   .on('connection', handle_connect_socket );
   res.json({ clientSocket })
+
+  // Handle data sent from the client
+  socket.on('clientMessage', (data) => {
+    console.log('Received message from client:', data);
+
+    // Broadcast the message to all connected clients
+    io.emit('serverMessage', 'Hello, client! I received your message.');
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+  });
+
+
 });
 
 
