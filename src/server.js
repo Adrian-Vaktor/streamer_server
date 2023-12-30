@@ -26,7 +26,7 @@ const socketIO = require('socket.io');
 const { Readable } = require('stream');
 const fs = require('fs');
 const lame = require('lame')
-
+const wav = require('wav');
 
 
 // Instantiate server instance
@@ -43,18 +43,90 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 
-// constants and app-wide variables
+// Constants and app-wide variables
 //--------------------------------------------------------------------------------------------------
 
 const chunkSize = 1024;
+
+// Dynamic App variables and stores
+//--------------------------------------------------------------------------------------------------
+
 const sessions = {};
 
-// Data Types and Structs 
+// Audio file encoders and decoders 
 //--------------------------------------------------------------------------------------------------
-class SongReadStream{
+
+const mp3_decoder = new lame.Decoder();
+const pcm_encoder = new wav.Writer({
+  sampleRate: 44100, // Replace with your desired sample rate
+  channels: 2, // Replace with your desired number of channels
+  bitDepth: 16, // Replace with your desired bit depth
+});
+
+// Custom Data Types and Structs 
+//--------------------------------------------------------------------------------------------------
+
+// Used to track the Active Listener's song stream position and effect on changes
+class SongStream_ActiveListener_ClientInformation{
   constructor(){
-    this.read_stream = null
+    this.listener_id = null
+    this.session_id = null
+    this.socket_id = null
+    this.songdata = null
+    this.playback_position_time = null
+    this.playback_position_samples = null
   }
+}
+
+// Used to track a passive listener's song stream position
+class SongStream_PassiveListener_ClientInformation{
+  constructor(){
+    this.listener_id = null
+    this.session_id = null
+    this.socket_id = null
+    this.songdata = null
+    this.playback_position_time = null
+    this.playback_position_samples = null
+  }
+}
+
+// Used to fetch and store the currently selected or playing song's data and information
+class SongData{
+  constructor(){
+    this.audio_file_id = null
+    this.audio_file_data = null
+    this.audio_file_length_time = null
+    this.audio_file_length_samples = null
+    this.number_of_channels = null
+    this.sample_rate = null
+    this.stream_chunk_width_per_second = null
+    this.song_information = null
+
+    // this.read_stream = new Readable({
+    //   readableHighWaterMark: chunkSize,
+    //   read( present_chunk_size ){
+
+    //     // If no signal or at the end of the signal --> send null flag to end of the stream.
+    //     // Else: 
+    //     // Slice out the chunk size of data from the start of the remaining file data --> then redeclare the file data with the remaing data.
+    //     // Push the chunk into the readstream.
+
+    //     if (this.audio_file_data.length <= 0) {
+    //       this.push(null);
+    //       return
+    //     }
+    //     const present_chunk = this.audio_file_data.slice(0, present_chunk_size);
+    //     this.audio_file_data = songData.slice( present_chunk_size );
+    //     this.push( present_chunk );
+    //   }
+    // })
+  }
+  fetch_song_audio_data = () => {}
+  fetch_song_metadata = () => {}
+  // calculate_chunk_width_per_second = () => {}
+
+  init = () => {}
+
   get_song_file_from_song_id = ( song_id ) => {
     // Logic to fetch data from database or create readstream from this place of the database
     const song_file = song_id
@@ -62,13 +134,10 @@ class SongReadStream{
   }
 
   get_song_stream_from_id = ( song_id ) => {
-    const audioFile = get_song_file_from_song_id( song_id )
+    const audio_file_data = get_song_pcm_data_from_song_id( song_id )
     const songStream = new Readable({
-      read() {
-        // Push the data into the stream
-        this.push(songData);
-        // Signal the end of the stream
-        this.push(null);
+      read( present_chunk_size ) {
+
       },
     });
     this.read_stream = fs.createReadStream()
@@ -80,14 +149,44 @@ class SongReadStream{
     const audioFilePath = song_location || 'path/to/your/audio/file.pcm' ;
     this.read_stream = audioFilePath
     return this
-  }
-  
+  }  
 }
+
+// Used to create and store the readstream for the currently selected or playing song
+class SongReadStream{
+  constructor( song_data ){
+    this.song_data = song_data
+    this.last_chunk_sample_position = 0
+    this.song_read_stream = null
+  }
+  create_read_stream = ( on_data_callback, on_end_callback) => {
+    // NEEDED: Logic that handles the correct file conversions to PCM
+    const current_decoder = mp3_decoder
+    const current_encoder = pcm_encoder
+    this.song_read_stream = fs.createReadStream( song_data )
+      .pipe(current_decoder)
+      .pipe(current_encoder)
+      .on('data', on_data_callback)
+      .on('end', on_end_callback)
+    
+      // .on('data', (chunk) => {
+      //   // This event is emitted when PCM data is available
+      //   // Push the chunk into the PCM stream
+      //   pcmStream.push(chunk);
+      // })
+      // .on('end', () => {
+      //   // Signal the end of the PCM stream when decoding is complete
+      //   pcmStream.push(null);
+      // });
+  }
+}
+
+
 
 // System Functions
 //--------------------------------------------------------------------------------------------------
 
-// Send a chunk of data from the Audio ReadStream
+// Send a chunk of data down the sockets from the Audio ReadStream
 const send_data_to_all_sockets = ( data_chunk, sockets_array ) => {
   sockets_array.forEach((socket) => {
     socket.emit( 'data', data_chunk)
