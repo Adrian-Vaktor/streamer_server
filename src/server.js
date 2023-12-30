@@ -23,7 +23,11 @@
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
+const { Readable } = require('stream');
 const fs = require('fs');
+const lame = require('lame')
+
+
 
 // Instantiate server instance
 //--------------------------------------------------------------------------------------------------
@@ -31,31 +35,57 @@ const app = express();
 const server = http.createServer(app);
 const socket_io = socketIO(server);
 
+
 // Server Dependencies
 //--------------------------------------------------------------------------------------------------
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+
 // constants and app-wide variables
 //--------------------------------------------------------------------------------------------------
+
 const chunkSize = 1024;
 const sessions = {};
 
-// System Functions
+// Data Types and Structs 
 //--------------------------------------------------------------------------------------------------
-
 class SongReadStream{
   constructor(){
     this.read_stream = null
   }
+  get_song_file_from_song_id = ( song_id ) => {
+    // Logic to fetch data from database or create readstream from this place of the database
+    const song_file = song_id
+    return song_file
+  }
+
+  get_song_stream_from_id = ( song_id ) => {
+    const audioFile = get_song_file_from_song_id( song_id )
+    const songStream = new Readable({
+      read() {
+        // Push the data into the stream
+        this.push(songData);
+        // Signal the end of the stream
+        this.push(null);
+      },
+    });
+    this.read_stream = fs.createReadStream()
+    return this
+  }
+
   // Get a readstream from the audio file location
   get_song_stream_from_location = ( song_location ) => {
     const audioFilePath = song_location || 'path/to/your/audio/file.pcm' ;
     this.read_stream = audioFilePath
     return this
   }
+  
 }
+
+// System Functions
+//--------------------------------------------------------------------------------------------------
 
 // Send a chunk of data from the Audio ReadStream
 const send_data_to_all_sockets = ( data_chunk, sockets_array ) => {
@@ -72,7 +102,7 @@ const send_endflag_to_all_sockets = ( sockets_array ) => {
 }
 
 // Read the audio file in chunks and send to the client
-const get_song_and_stream_to_sockets = ( song_location, sockets_array ) => {
+const stream_song_to_sockets = ( song_location, sockets_array ) => {
   const song_stream = new SongReadStream()
   song_stream.get_song_stream_from_location(song_location)
   song_stream.read_stream.on( 'data' , ( data_chunk ) => { setTimeout(() => send_data_to_all_sockets( data_chunk, sockets_array ), 100) })
@@ -93,6 +123,8 @@ app.post('/play-song', (req,res) => {
   const postData = req.body;
   const userId = postData.userId
   const songId = postData.songId
+
+  
   
   // Send a response
   res.json({ message: 'Data received successfully' });
